@@ -14,7 +14,8 @@ import (
 var _ messaging.Publisher = (*publisher)(nil)
 
 type publisher struct {
-	conn *broker.Conn
+	conn    *broker.Conn
+	jetConn broker.JetStreamContext
 }
 
 // Publisher wraps messaging Publisher exposing
@@ -46,9 +47,12 @@ func (pub *publisher) Publish(topic string, msg messaging.Message) error {
 		subject = fmt.Sprintf("%s.%s", subject, msg.Subtopic)
 	}
 
-	if err := pub.conn.Publish(subject, data); err != nil {
+	if _, err := pub.jetConn.Publish(subject, data); err != nil {
 		return err
 	}
+	// if err := pub.conn.Publish(subject, data); err != nil {
+	// 	return err
+	// }
 
 	return nil
 }

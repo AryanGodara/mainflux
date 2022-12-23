@@ -1,7 +1,7 @@
 services:
   broker:
     image: nats:2.2.4-alpine
-    command: "-c /etc/nats/nats.conf"
+    command: "-c /etc/nats/nats.conf -js --cluster_name NATS --cluster nats://0.0.0.0:6222"
     volumes:
       - ./../nats/:/etc/nats
     ports:

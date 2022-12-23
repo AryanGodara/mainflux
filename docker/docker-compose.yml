@@ -106,6 +106,28 @@ services:
       - mainflux-base-net
     ports:
     - 4222:4222
+  
+  broker2:
+    extends:
+      file: brokers/nats.yml
+      service: broker
+    container_name: mainflux-broker
+    restart: on-failure
+    networks:
+      - mainflux-base-net
+    depends_on:
+      - broker
+  
+  broker3:
+    extends:
+      file: brokers/nats.yml
+      service: broker
+    container_name: mainflux-broker
+    restart: on-failure
+    networks:
+      - mainflux-base-net
+    depends_on:
+      - broker
 
   auth-db:
     image: postgres:13.3-alpine

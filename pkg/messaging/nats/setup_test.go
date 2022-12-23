@@ -22,8 +22,9 @@ import (
 const (
 	port          = "4222/tcp"
 	brokerName    = "nats"
-	brokerVersion = "1.3.0"
-	queue         = "mainflux-nats"
+	brokerVersion = "2.9.10"
+	// brokerVersion = "1.3.0"
+	queue = "mainflux-nats"
 )
 
 var (
@@ -39,7 +40,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	container, err := pool.Run(brokerName, brokerVersion, []string{})
+	container, err := pool.Run(brokerName, brokerVersion, []string{"JETSTREAM"})
 	if err != nil {
 		log.Fatalf("Could not start container: %s", err)
 	}
@@ -73,7 +74,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func newConn() (*broker.Conn, error) {
+func newConn() (*broker.Conn, broker.JetStreamContext, error) {
 	// opts := broker.Options{
 	// 	Url:              address,
 	// 	AllowReconnect:   true,
@@ -97,10 +98,22 @@ func newConn() (*broker.Conn, error) {
 
 	conn, err := opts.Connect()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	js, err := conn.JetStream(broker.PublishAsyncMaxPending((256)))
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return conn, nil
+	_, err = js.AddStream(&broker.StreamConfig{
+		Name:     "mf-nats-stream",
+		Subjects: []string{},
+	})
+	if err != nil {
+		log.Fatalf(fmt.Sprintf("Could not create named stream : %v", err))
+	}
+
+	return conn, js, nil
 }
 
 func handleInterrupt(pool *dockertest.Pool, container *dockertest.Resource) {

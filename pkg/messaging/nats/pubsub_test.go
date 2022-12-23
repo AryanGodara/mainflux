@@ -33,29 +33,38 @@ func TestPublisher(t *testing.T) {
 	msgChan := make(chan []byte)
 
 	// Subscribing with topic, and with subtopic, so that we can publish messages.
-	conn, err := newConn()
+	conn, js, err := newConn()
+	fmt.Println()
+	fmt.Println("error 0 : ", err)
+	fmt.Println()
 	assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
-	topicSub, err := conn.Subscribe(fmt.Sprintf("%s.%s", chansPrefix, topic), func(m *broker.Msg) {
+	topicSub, err := js.Subscribe(fmt.Sprintf("%s.%s", chansPrefix, topic), func(m *broker.Msg) {
 		msgChan <- m.Data
 	})
+	fmt.Println()
+	fmt.Println("error 1 : ", err)
+	fmt.Println()
 	assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
-	subtopicSub, err := conn.Subscribe(fmt.Sprintf("%s.%s.%s", chansPrefix, topic, subtopic), func(m *broker.Msg) {
+	subtopicSub, err := js.Subscribe(fmt.Sprintf("%s.%s.%s", chansPrefix, topic, subtopic), func(m *broker.Msg) {
 		msgChan <- m.Data
 	})
+	fmt.Println()
+	fmt.Println("error 2 : ", err)
+	fmt.Println()
 	assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 	// topicSub, err := conn.ChanSubscribe(fmt.Sprintf("%s.%s", chansPrefix, topic), make(chan *broker.Msg))
 	// assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 	// subtopicSub, err := conn.ChanSubscribe(fmt.Sprintf("%s.%s.%s", chansPrefix, topic, subtopic), make(chan *broker.Msg))
 	// assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
-	msgLimit := int(1e7)
-	bytesLimit := int(1e10)
+	// msgLimit := int(1e7)
+	// bytesLimit := int(1e10)
 
-	err = topicSub.SetPendingLimits(msgLimit, bytesLimit)
-	assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
-	err = subtopicSub.SetPendingLimits(msgLimit, bytesLimit)
-	assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	// err = topicSub.SetPendingLimits(msgLimit, bytesLimit)
+	// assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	// err = subtopicSub.SetPendingLimits(msgLimit, bytesLimit)
+	// assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	t.Cleanup(func() {
 		topicSub.Unsubscribe()
@@ -106,6 +115,9 @@ func TestPublisher(t *testing.T) {
 			Payload:   tc.payload,
 		}
 		err = pubsub.Publish(topic, expectedMsg)
+		fmt.Println()
+		fmt.Println("error pubsub.Publish : ", err)
+		fmt.Println()
 		assert.Nil(t, err, fmt.Sprintf("%s: got unexpected error: %s", tc.desc, err))
 
 		data, err := proto.Marshal(&expectedMsg)
@@ -131,7 +143,7 @@ func TestSubscribe(t *testing.T) {
 	msgChan := make(chan messaging.Message)
 
 	// Create connection to publish messages to the subscribed topic.
-	conn, err := newConn()
+	conn, js, err := newConn()
 	assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	t.Cleanup(func() {
@@ -210,7 +222,7 @@ func TestSubscribe(t *testing.T) {
 				Payload:   data,
 			}
 
-			topicSub, err := conn.Subscribe(subject, func(m *broker.Msg) {
+			topicSub, err := js.Subscribe(subject, func(m *broker.Msg) {
 				var msg messaging.Message
 				if err := proto.Unmarshal(m.Data, &msg); err != nil {
 					return
@@ -228,7 +240,7 @@ func TestSubscribe(t *testing.T) {
 			msgdata, err := proto.Marshal(&expectedMsg)
 			assert.Nil(t, err, fmt.Sprintf("%s: failed to serialize protobuf error: %s\n", tc.desc, err))
 
-			err = conn.Publish(subject, msgdata)
+			_, err = js.Publish(subject, msgdata)
 			assert.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 			receivedMsg := <-msgChan
 			assert.Equal(t, expectedMsg, receivedMsg, fmt.Sprintf("%s: expected %+v got %+v\n", tc.desc, expectedMsg, receivedMsg))

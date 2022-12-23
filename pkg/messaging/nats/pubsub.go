@@ -66,14 +66,23 @@ func NewPubSub(url, queue string, logger log.Logger) (messaging.PubSub, error) {
 	if err != nil {
 		return nil, err
 	}
+	js, err := conn.JetStream(broker.PublishAsyncMaxPending((256)))
+	if err != nil {
+		return nil, err
+	}
+
 	ret := &pubsub{
 		publisher: publisher{
-			conn: conn,
+			conn:    conn,
+			jetConn: js,
 		},
 		queue:         queue,
 		logger:        logger,
 		subscriptions: make(map[string]map[string]subscription),
 	}
+
+	ret.Create(js, "mf-nats-stream")
+
 	return ret, nil
 }
 
@@ -115,7 +124,8 @@ func (ps *pubsub) Subscribe(id, topic string, handler messaging.MessageHandler) 
 
 	switch ps.queue {
 	case "":
-		sub, err = ps.conn.Subscribe(topic, nh)
+		// sub, err = ps.conn.Subscribe(topic, nh)
+		sub, err = ps.jetConn.Subscribe(topic, nh)
 		if err != nil {
 			return err
 		}
@@ -192,4 +202,41 @@ func (ps *pubsub) natsHandler(h messaging.MessageHandler) broker.MsgHandler {
 			ps.logger.Warn(fmt.Sprintf("Failed to handle Mainflux message: %s", err))
 		}
 	}
+}
+
+// Create creates the named stream.
+func (ps *pubsub) Create(js broker.JetStreamContext, name string) *broker.StreamInfo {
+	fmt.Printf("Creating stream: %q\n", name)
+	strInfo, err := js.AddStream(&broker.StreamConfig{
+		Name:     name,
+		Subjects: []string{},
+		MaxAge:   0, // 0 means keep forever
+		Storage:  broker.FileStorage,
+	})
+	if err != nil {
+		ps.logger.Warn(fmt.Sprintf("Could not create named stream : %v", err))
+	}
+
+	return strInfo
+}
+
+// Delete deletes the named stream.
+func (ps *pubsub) Delete(js broker.JetStreamContext, name string) {
+	fmt.Printf("Deleting stream: %q\n", name)
+	if err := js.DeleteStream(name); err != nil {
+		ps.logger.Warn(fmt.Sprintf("error deleting stream: %v", err))
+	}
+}
+
+func (ps *pubsub) AddConsumer(js broker.JetStreamContext, strName, consName, consFilter string) {
+	info, err := js.AddConsumer(strName, &broker.ConsumerConfig{
+		Durable:   consName,
+		AckPolicy: broker.AckExplicitPolicy,
+		// MaxAckPending: 1,      // default value is 20,000
+		FilterSubject: consFilter,
+	})
+	if err != nil {
+		ps.logger.Warn(fmt.Sprintf("could not add consumer: %v", err))
+	}
+	ps.logger.Info(fmt.Sprintf("%v", info))
 }
