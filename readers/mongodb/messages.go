@@ -16,9 +16,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// Collection for SenML messages
-const defCollection = "messages"
+const defCollection = "messages" // Collection for SenML messages
 
+// mongoDB comparison operators different than default mainflux
+// readers comparison operators. This map maps mainflux comparators
+// to mongoDB comparators.
 var mongoComparators = map[string]string{
 	readers.EqualKey:            "eq",
 	readers.LowerThanKey:        "lt",
@@ -126,8 +128,8 @@ func fmtCondition(chanID string, rpm readers.PageMetadata) bson.D {
 			if val, ok := query["comparator"].(string); ok {
 				comparator := fmt.Sprintf("$%s", mongoComparators[val]) // mongoDB comparison operator
 				bsonFilter = bson.M{comparator: value}
-				filter = append(filter, bson.E{Key: "value", Value: bsonFilter})
 			}
+			filter = append(filter, bson.E{Key: "value", Value: bsonFilter})
 		case "vb":
 			filter = append(filter, bson.E{Key: "bool_value", Value: value})
 		case "vs":
