@@ -127,6 +127,11 @@ func decodeList(ctx context.Context, r *http.Request) (interface{}, error) {
 		return nil, err
 	}
 
+	vb, err := apiutil.ReadBoolQuery(r, boolValueKey, false)
+	if err != nil && err != errors.ErrNotFoundParam {
+		return nil, err
+	}
+
 	from, err := apiutil.ReadFloatQuery(r, fromKey, 0)
 	if err != nil {
 		return nil, err
@@ -153,17 +158,10 @@ func decodeList(ctx context.Context, r *http.Request) (interface{}, error) {
 			Comparator:  comparator,
 			StringValue: vs,
 			DataValue:   vd,
+			BoolValue:   vb,
 			From:        from,
 			To:          to,
 		},
-	}
-
-	vb, err := apiutil.ReadBoolQuery(r, boolValueKey, false)
-	if err != nil && err != errors.ErrNotFoundParam {
-		return nil, err
-	}
-	if err == nil {
-		req.pageMeta.BoolValue = vb
 	}
 
 	return req, nil
@@ -194,7 +192,6 @@ func encodeError(_ context.Context, err error, w http.ResponseWriter) {
 		errors.Contains(err, errors.ErrMalformedEntity),
 		err == apiutil.ErrMissingID,
 		err == apiutil.ErrLimitSize,
-		err == apiutil.ErrOffsetSize,
 		err == apiutil.ErrInvalidComparator:
 		w.WriteHeader(http.StatusBadRequest)
 	case errors.Contains(err, errors.ErrAuthentication),

@@ -60,8 +60,7 @@ type PageMetadata struct {
 // ParseValueComparator convert comparison operator keys into mathematic anotation
 func ParseValueComparator(query map[string]interface{}) string {
 	comparator := "="
-	val, ok := query["comparator"]
-	if ok {
+	if val, ok := query["comparator"]; ok {
 		switch val.(string) {
 		case EqualKey:
 			comparator = "="
