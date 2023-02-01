@@ -12,7 +12,7 @@ import (
 	"time"
 
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
-	influxdata "github.com/influxdata/influxdb/client/v2"
+	influxdata "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/mainflux/mainflux"
 	authapi "github.com/mainflux/mainflux/auth/api/grpc"
 	"github.com/mainflux/mainflux/logger"
@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -39,6 +40,9 @@ const (
 	defDBPort            = "8086"
 	defDBUser            = "mainflux"
 	defDBPass            = "mainflux"
+	defDBBucket          = "mainflux-bucket"
+	defDBOrg             = "mainflux"
+	defDBToken           = "mainflux-token"
 	defClientTLS         = "false"
 	defCACerts           = ""
 	defServerCert        = ""
@@ -56,6 +60,9 @@ const (
 	envDBPort            = "MF_INFLUXDB_PORT"
 	envDBUser            = "MF_INFLUXDB_ADMIN_USER"
 	envDBPass            = "MF_INFLUXDB_ADMIN_PASSWORD"
+	envDBBucket          = "MF_INFLUXDB_BUCKET"
+	envDBOrg             = "MF_INFLUXDB_ORG"
+	envDBToken           = "MF_INFLUXDB_TOKEN"
 	envClientTLS         = "MF_INFLUX_READER_CLIENT_TLS"
 	envCACerts           = "MF_INFLUX_READER_CA_CERTS"
 	envServerCert        = "MF_INFLUX_READER_SERVER_CERT"
@@ -75,6 +82,10 @@ type config struct {
 	dbPort            string
 	dbUser            string
 	dbPass            string
+	dbBucket          string
+	dbOrg             string
+	dbToken           string
+	dbUrl             string
 	clientTLS         bool
 	caCerts           string
 	serverCert        string
@@ -87,7 +98,7 @@ type config struct {
 }
 
 func main() {
-	cfg, clientCfg := loadConfigs()
+	cfg, repoCfg := loadConfigs()
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -111,14 +122,14 @@ func main() {
 
 	auth := authapi.NewClient(authTracer, authConn, cfg.usersAuthTimeout)
 
-	client, err := influxdata.NewHTTPClient(clientCfg)
+	client, err := connectToInfluxDB(cfg)
 	if err != nil {
 		logger.Error(fmt.Sprintf("Failed to create InfluxDB client: %s", err))
 		os.Exit(1)
 	}
 	defer client.Close()
 
-	repo := newService(client, cfg.dbName, logger)
+	repo := newService(client, repoCfg, logger)
 
 	g.Go(func() error {
 		return startHTTPServer(ctx, repo, tc, auth, cfg, logger)
@@ -150,7 +161,7 @@ func connectToAuth(cfg config, logger logger.Logger) *grpc.ClientConn {
 			opts = append(opts, grpc.WithTransportCredentials(tpc))
 		}
 	} else {
-		opts = append(opts, grpc.WithInsecure())
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		logger.Info("gRPC communication is not encrypted")
 	}
 
@@ -163,7 +174,13 @@ func connectToAuth(cfg config, logger logger.Logger) *grpc.ClientConn {
 	return conn
 }
 
-func loadConfigs() (config, influxdata.HTTPConfig) {
+func connectToInfluxDB(cfg config) (influxdata.Client, error) {
+	client := influxdata.NewClient(cfg.dbUrl, cfg.dbToken)
+	_, err := client.Ready(context.Background())
+	return client, err
+}
+
+func loadConfigs() (config, influxdb.RepoConfig) {
 	tls, err := strconv.ParseBool(mainflux.Env(envClientTLS, defClientTLS))
 	if err != nil {
 		log.Fatalf("Invalid value passed for %s\n", envClientTLS)
@@ -187,6 +204,9 @@ func loadConfigs() (config, influxdata.HTTPConfig) {
 		dbPort:            mainflux.Env(envDBPort, defDBPort),
 		dbUser:            mainflux.Env(envDBUser, defDBUser),
 		dbPass:            mainflux.Env(envDBPass, defDBPass),
+		dbBucket:          mainflux.Env(envDBBucket, defDBBucket),
+		dbOrg:             mainflux.Env(envDBOrg, defDBOrg),
+		dbToken:           mainflux.Env(envDBToken, defDBToken),
 		clientTLS:         tls,
 		caCerts:           mainflux.Env(envCACerts, defCACerts),
 		serverCert:        mainflux.Env(envServerCert, defServerCert),
@@ -198,13 +218,13 @@ func loadConfigs() (config, influxdata.HTTPConfig) {
 		usersAuthTimeout:  userAuthTimeout,
 	}
 
-	clientCfg := influxdata.HTTPConfig{
-		Addr:     fmt.Sprintf("http://%s:%s", cfg.dbHost, cfg.dbPort),
-		Username: cfg.dbUser,
-		Password: cfg.dbPass,
-	}
+	cfg.dbUrl = fmt.Sprintf("http://%s:%s", cfg.dbHost, cfg.dbPort)
 
-	return cfg, clientCfg
+	repoCfg := influxdb.RepoConfig{
+		Bucket: cfg.dbBucket,
+		Org:    cfg.dbOrg,
+	}
+	return cfg, repoCfg
 }
 
 func connectToThings(cfg config, logger logger.Logger) *grpc.ClientConn {
@@ -221,7 +241,7 @@ func connectToThings(cfg config, logger logger.Logger) *grpc.ClientConn {
 		}
 	} else {
 		logger.Info("gRPC communication is not encrypted")
-		opts = append(opts, grpc.WithInsecure())
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
 	conn, err := grpc.Dial(cfg.thingsAuthURL, opts...)
@@ -257,8 +277,8 @@ func initJaeger(svcName, url string, logger logger.Logger) (opentracing.Tracer, 
 	return tracer, closer
 }
 
-func newService(client influxdata.Client, dbName string, logger logger.Logger) readers.MessageRepository {
-	repo := influxdb.New(client, dbName)
+func newService(client influxdata.Client, repoCfg influxdb.RepoConfig, logger logger.Logger) readers.MessageRepository {
+	repo := influxdb.New(client, repoCfg)
 	repo = api.LoggingMiddleware(repo, logger)
 	repo = api.MetricsMiddleware(
 		repo,
