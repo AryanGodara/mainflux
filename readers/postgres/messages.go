@@ -36,10 +36,11 @@ func (tr postgresRepository) ReadAll(chanID string, rpm readers.PageMetadata) (r
 		order = "created"
 		format = rpm.Format
 	}
+	cond := fmtCondition(chanID, rpm)
 
 	q := fmt.Sprintf(`SELECT * FROM %s
     WHERE %s ORDER BY %s DESC
-	LIMIT :limit OFFSET :offset;`, format, fmtCondition(chanID, rpm), order)
+	LIMIT :limit OFFSET :offset;`, format, cond, order)
 
 	params := map[string]interface{}{
 		"channel":      chanID,
@@ -97,7 +98,7 @@ func (tr postgresRepository) ReadAll(chanID string, rpm readers.PageMetadata) (r
 
 	}
 
-	q = fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s;`, format, fmtCondition(chanID, rpm))
+	q = fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s;`, format, cond)
 	rows, err = tr.db.NamedQuery(q, params)
 	if err != nil {
 		return readers.MessagesPage{}, errors.Wrap(readers.ErrReadMessages, err)

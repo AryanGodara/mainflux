@@ -49,7 +49,7 @@ var (
 	idProvider = uuid.New()
 )
 
-func TestReadAll(t *testing.T) {
+func TestReadSenml(t *testing.T) {
 	writer := iwriter.New(client, repoCfg)
 
 	chanID, err := idProvider.ID()
@@ -388,7 +388,7 @@ func TestReadAll(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs[:len(vs)-1],
+				StringValue: vs[:len(vs)-1] + string(rune(1)),
 				Comparator:  readers.GreaterThanKey,
 			},
 			page: readers.MessagesPage{
@@ -402,7 +402,7 @@ func TestReadAll(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs[:len(vs)-1],
+				StringValue: vs[:len(vs)-1] + string(rune(1)),
 				Comparator:  readers.GreaterThanEqualKey,
 			},
 			page: readers.MessagesPage{
@@ -457,7 +457,7 @@ func TestReadAll(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:     0,
 				Limit:      limit,
-				DataValue:  vd[:len(vs)-1],
+				DataValue:  vd[:len(vs)-1] + string(rune(1)),
 				Comparator: readers.GreaterThanKey,
 			},
 			page: readers.MessagesPage{
@@ -471,7 +471,7 @@ func TestReadAll(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:     0,
 				Limit:      limit,
-				DataValue:  vd[:len(vs)-1],
+				DataValue:  vd[:len(vs)-1] + string(rune(1)),
 				Comparator: readers.GreaterThanEqualKey,
 			},
 			page: readers.MessagesPage{
@@ -549,6 +549,13 @@ func TestReadAll(t *testing.T) {
 
 	for _, tc := range cases {
 		result, err := reader.ReadAll(tc.chanID, tc.pageMeta)
+		fmt.Println()
+		fmt.Println(tc.desc)
+		fmt.Println("comparator: ", tc.pageMeta.Comparator)
+		fmt.Println("value: ", tc.pageMeta.Value)
+		fmt.Println("stringvalue: ", tc.pageMeta.StringValue)
+		fmt.Println("datavalue: ", tc.pageMeta.DataValue)
+		fmt.Println()
 		assert.Nil(t, err, fmt.Sprintf("%s: got unexpected error: %s\n", tc.desc, err))
 		assert.ElementsMatch(t, tc.page.Messages, result.Messages, fmt.Sprintf("%s: expected: %v, got: %v\n", tc.desc, tc.page.Messages, result.Messages))
 		assert.Equal(t, tc.page.Total, result.Total, fmt.Sprintf("%s: expected %d got %d\n", tc.desc, tc.page.Total, result.Total))

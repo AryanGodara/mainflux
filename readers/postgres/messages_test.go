@@ -100,7 +100,7 @@ func TestReadSenml(t *testing.T) {
 	}
 
 	err = writer.Consume(messages)
-	assert.Nil(t, err, fmt.Sprintf("expected no error got %s\n", err))
+	assert.Nil(t, err, fmt.Sprintf("failed to store message to Postgres %s\n", err))
 
 	reader := preader.New(db)
 

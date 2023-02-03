@@ -195,11 +195,19 @@ func fmtCondition(chanID string, rpm readers.PageMetadata) (string, string) {
 			sb.WriteString(`|> filter(fn: (r) => exists r.boolValue)`)
 			sb.WriteString(fmt.Sprintf(`|> filter(fn: (r) => r.boolValue == %v)`, value))
 		case "vs":
+			comparator := readers.ParseValueComparator(query)
+			if comparator == "=" {
+				comparator = "=="
+			}
 			sb.WriteString(`|> filter(fn: (r) => exists r.stringValue)`)
-			sb.WriteString(fmt.Sprintf(`|> filter(fn: (r) => r.stringValue == "%s")`, value))
+			sb.WriteString(fmt.Sprintf(`|> filter(fn: (r) => r.stringValue%s"%s")`, comparator, value))
 		case "vd":
+			comparator := readers.ParseValueComparator(query)
+			if comparator == "=" {
+				comparator = "=="
+			}
 			sb.WriteString(`|> filter(fn: (r) => exists r.dataValue)`)
-			sb.WriteString(fmt.Sprintf(`|> filter(fn: (r) => r.dataValue == "%s")`, value))
+			sb.WriteString(fmt.Sprintf(`|> filter(fn: (r) => r.dataValue%s"%s")`, comparator, value))
 		}
 	}
 
