@@ -549,13 +549,6 @@ func TestReadSenml(t *testing.T) {
 
 	for _, tc := range cases {
 		result, err := reader.ReadAll(tc.chanID, tc.pageMeta)
-		fmt.Println()
-		fmt.Println(tc.desc)
-		fmt.Println("comparator: ", tc.pageMeta.Comparator)
-		fmt.Println("value: ", tc.pageMeta.Value)
-		fmt.Println("stringvalue: ", tc.pageMeta.StringValue)
-		fmt.Println("datavalue: ", tc.pageMeta.DataValue)
-		fmt.Println()
 		assert.Nil(t, err, fmt.Sprintf("%s: got unexpected error: %s\n", tc.desc, err))
 		assert.ElementsMatch(t, tc.page.Messages, result.Messages, fmt.Sprintf("%s: expected: %v, got: %v\n", tc.desc, tc.page.Messages, result.Messages))
 		assert.Equal(t, tc.page.Total, result.Total, fmt.Sprintf("%s: expected %d got %d\n", tc.desc, tc.page.Total, result.Total))
