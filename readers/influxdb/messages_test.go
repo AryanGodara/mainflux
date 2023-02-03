@@ -33,7 +33,7 @@ const (
 
 var (
 	v   float64 = 5
-	vs  string  = "a"
+	vs  string  = "value"
 	vb  bool    = true
 	vd  string  = "dataValue"
 	sum float64 = 42
