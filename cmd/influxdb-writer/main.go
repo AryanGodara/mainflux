@@ -7,111 +7,91 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"time"
 
-	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
-	influxdata "github.com/influxdata/influxdb-client-go/v2"
-	"github.com/mainflux/mainflux"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/mainflux/mainflux/consumers"
 	"github.com/mainflux/mainflux/consumers/writers/api"
 	"github.com/mainflux/mainflux/consumers/writers/influxdb"
+	"github.com/mainflux/mainflux/internal"
+	influxDBClient "github.com/mainflux/mainflux/internal/clients/influxdb"
+	"github.com/mainflux/mainflux/internal/env"
+	"github.com/mainflux/mainflux/internal/server"
+	httpserver "github.com/mainflux/mainflux/internal/server/http"
 	"github.com/mainflux/mainflux/logger"
-	"github.com/mainflux/mainflux/pkg/errors"
 	"github.com/mainflux/mainflux/pkg/messaging/brokers"
-	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	svcName      = "influxdb-writer"
-	stopWaitTime = 5 * time.Second
-
-	defBrokerURL  = "nats://localhost:4222"
-	defLogLevel   = "error"
-	defPort       = "8180"
-	defDBHost     = "localhost"
-	defDBPort     = "8086"
-	defDBUser     = "mainflux"
-	defDBPass     = "mainflux"
-	defConfigPath = "/config.toml"
-	defDBBucket   = "mainflux-bucket"
-	defDBOrg      = "mainflux"
-	defDBToken    = "mainflux-token"
-
-	envBrokerURL  = "MF_BROKER_URL"
-	envLogLevel   = "MF_INFLUX_WRITER_LOG_LEVEL"
-	envPort       = "MF_INFLUX_WRITER_PORT"
-	envDBHost     = "MF_INFLUXDB_HOST"
-	envDBPort     = "MF_INFLUXDB_PORT"
-	envDBUser     = "MF_INFLUXDB_ADMIN_USER"
-	envDBPass     = "MF_INFLUXDB_ADMIN_PASSWORD"
-	envConfigPath = "MF_INFLUX_WRITER_CONFIG_PATH"
-	envDBBucket   = "MF_INFLUXDB_BUCKET"
-	envDBOrg      = "MF_INFLUXDB_ORG"
-	envDBToken    = "MF_INFLUXDB_TOKEN"
+	svcName           = "influxdb-writer"
+	envPrefix         = "MF_INFLUX_WRITER_"
+	envPrefixHttp     = "MF_INFLUX_WRITER_HTTP_"
+	envPrefixInfluxdb = "MF_INFLUXDB_"
+	defSvcHttpPort    = "8180"
 )
 
 type config struct {
-	brokerURL  string
-	logLevel   string
-	port       string
-	dbHost     string
-	dbPort     string
-	dbUser     string
-	dbPass     string
-	configPath string
-	dbBucket   string
-	dbOrg      string
-	dbToken    string
-	dbUrl      string
+	LogLevel   string `env:"MF_INFLUX_WRITER_LOG_LEVEL"     envDefault:"info"`
+	ConfigPath string `env:"MF_INFLUX_WRITER_CONFIG_PATH"   envDefault:"/config.toml"`
+	BrokerURL  string `env:"MF_BROKER_URL"                  envDefault:"nats://localhost:4222"`
 }
 
 func main() {
-	cfg, repoCfg := loadConfigs()
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
-	logger, err := logger.New(os.Stdout, cfg.logLevel)
+	cfg := config{}
+	if err := env.Parse(&cfg); err != nil {
+		log.Fatalf("failed to load %s configuration : %s", svcName, err.Error())
+	}
+
+	logger, err := logger.New(os.Stdout, cfg.LogLevel)
 	if err != nil {
 		log.Fatalf(err.Error())
 	}
 
-	pubSub, err := brokers.NewPubSub(cfg.brokerURL, "", logger)
+	pubSub, err := brokers.NewPubSub(cfg.BrokerURL, "", logger)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to connect to message broker: %s", err))
-		os.Exit(1)
+		log.Fatalf("failed to connect to message broker: %s", err.Error())
 	}
 	defer pubSub.Close()
 
-	client, err := connectToInfluxDB(cfg)
+	influxDBConfig := influxDBClient.Config{}
+	if err := env.Parse(&influxDBConfig, env.Options{Prefix: envPrefixInfluxdb}); err != nil {
+		log.Fatalf("failed to load InfluxDB client configuration from environment variable : %s", err.Error())
+	}
+	influxDBConfig.DBUrl = fmt.Sprintf("%s://%s:%s", influxDBConfig.Protocol, influxDBConfig.Host, influxDBConfig.Port)
+
+	repocfg := influxdb.RepoConfig{
+		Bucket: influxDBConfig.Bucket,
+		Org:    influxDBConfig.Org,
+	}
+
+	client, err := influxDBClient.Connect(influxDBConfig)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to create InfluxDB client: %s", err))
-		os.Exit(1)
+		log.Fatalf("failed to connect to InfluxDB : %s", err.Error())
 	}
 	defer client.Close()
 
-	repo := influxdb.New(client, repoCfg)
-	counter, latency := makeMetrics()
-	repo = api.LoggingMiddleware(repo, logger)
-	repo = api.MetricsMiddleware(repo, counter, latency)
+	repo := newService(client, repocfg, logger)
 
-	if err := consumers.Start(svcName, pubSub, repo, cfg.configPath, logger); err != nil {
-		logger.Error(fmt.Sprintf("Failed to start InfluxDB writer: %s", err))
-		os.Exit(1)
+	if err := consumers.Start(svcName, pubSub, repo, cfg.ConfigPath, logger); err != nil {
+		log.Fatalf("failed to start InfluxDB writer: %s", err.Error())
 	}
 
+	httpServerConfig := server.Config{Port: defSvcHttpPort}
+	if err := env.Parse(&httpServerConfig, env.Options{Prefix: envPrefixHttp, AltPrefix: envPrefix}); err != nil {
+		log.Fatalf("failed to load %s HTTP server configuration : %s", svcName, err.Error())
+	}
+	hs := httpserver.New(ctx, cancel, svcName, httpServerConfig, api.MakeHandler(svcName), logger)
+
 	g.Go(func() error {
-		return startHTTPService(ctx, cfg.port, logger)
+		return hs.Start()
 	})
 
 	g.Go(func() error {
-		if sig := errors.SignalHandler(ctx); sig != nil {
-			cancel()
-			logger.Info(fmt.Sprintf("InfluxDB reader service shutdown by signal: %s", sig))
-		}
-		return nil
+		return server.StopSignalHandler(ctx, cancel, logger, svcName, hs)
 	})
 
 	if err := g.Wait(); err != nil {
@@ -119,75 +99,10 @@ func main() {
 	}
 }
 
-func connectToInfluxDB(cfg config) (influxdata.Client, error) {
-	client := influxdata.NewClient(cfg.dbUrl, cfg.dbToken)
-	_, err := client.Ready(context.Background())
-	return client, err
-}
-
-func loadConfigs() (config, influxdb.RepoConfig) {
-	cfg := config{
-		brokerURL:  mainflux.Env(envBrokerURL, defBrokerURL),
-		logLevel:   mainflux.Env(envLogLevel, defLogLevel),
-		port:       mainflux.Env(envPort, defPort),
-		dbHost:     mainflux.Env(envDBHost, defDBHost),
-		dbPort:     mainflux.Env(envDBPort, defDBPort),
-		dbUser:     mainflux.Env(envDBUser, defDBUser),
-		dbPass:     mainflux.Env(envDBPass, defDBPass),
-		configPath: mainflux.Env(envConfigPath, defConfigPath),
-		dbBucket:   mainflux.Env(envDBBucket, defDBBucket),
-		dbOrg:      mainflux.Env(envDBOrg, defDBOrg),
-		dbToken:    mainflux.Env(envDBToken, defDBToken),
-	}
-	cfg.dbUrl = fmt.Sprintf("http://%s:%s", cfg.dbHost, cfg.dbPort)
-
-	repoCfg := influxdb.RepoConfig{
-		Bucket: cfg.dbBucket,
-		Org:    cfg.dbOrg,
-	}
-	return cfg, repoCfg
-}
-
-func makeMetrics() (*kitprometheus.Counter, *kitprometheus.Summary) {
-	counter := kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-		Namespace: "influxdb",
-		Subsystem: "message_writer",
-		Name:      "request_count",
-		Help:      "Number of database inserts.",
-	}, []string{"method"})
-
-	latency := kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-		Namespace: "influxdb",
-		Subsystem: "message_writer",
-		Name:      "request_latency_microseconds",
-		Help:      "Total duration of inserts in microseconds.",
-	}, []string{"method"})
-
-	return counter, latency
-}
-
-func startHTTPService(ctx context.Context, port string, logger logger.Logger) error {
-	p := fmt.Sprintf(":%s", port)
-	errCh := make(chan error)
-	server := &http.Server{Addr: p, Handler: api.MakeHandler(svcName)}
-
-	logger.Info(fmt.Sprintf("InfluxDB writer service started, exposed port %s", p))
-
-	go func() {
-		errCh <- server.ListenAndServe()
-	}()
-
-	select {
-	case <-ctx.Done():
-		ctxShutdown, cancelShutdown := context.WithTimeout(context.Background(), stopWaitTime)
-		defer cancelShutdown()
-		if err := server.Shutdown(ctxShutdown); err != nil {
-			logger.Error(fmt.Sprintf("InfluxDB writer service error occurred during shutdown at %s: %s", p, err))
-			return fmt.Errorf("influxDB writer service occurred during shutdown at %s: %w", p, err)
-		}
-		logger.Info(fmt.Sprintf("InfluxDB writer service  shutdown of http at %s", p))
-		return nil
-	case err := <-errCh:
-		return err
-	}
+func newService(client influxdb2.Client, repocfg influxdb.RepoConfig, logger logger.Logger) consumers.Consumer {
+	repo := influxdb.New(client, repocfg)
+	repo = api.LoggingMiddleware(repo, logger)
+	counter, latency := internal.MakeMetrics("influxdb", "message_writer")
+	repo = api.MetricsMiddleware(repo, counter, latency)
+	return repo
 }
