@@ -11,7 +11,7 @@ import (
 	"github.com/mainflux/mainflux/pkg/errors"
 	"github.com/mainflux/mainflux/readers"
 
-	influxdata "github.com/influxdata/influxdb-client-go/v2"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	jsont "github.com/mainflux/mainflux/pkg/transformers/json"
 	"github.com/mainflux/mainflux/pkg/transformers/senml"
 )
@@ -33,11 +33,11 @@ type RepoConfig struct {
 }
 type influxRepository struct {
 	cfg    RepoConfig
-	client influxdata.Client
+	client influxdb2.Client
 }
 
 // New returns new InfluxDB reader.
-func New(client influxdata.Client, repoCfg RepoConfig) readers.MessageRepository {
+func New(client influxdb2.Client, repoCfg RepoConfig) readers.MessageRepository {
 	return &influxRepository{
 		repoCfg,
 		client,

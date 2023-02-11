@@ -11,6 +11,14 @@ import (
 	"strconv"
 	"time"
 
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/mainflux/mainflux/internal"
+	authClient "github.com/mainflux/mainflux/internal/clients/grpc/auth"
+	thingsClient "github.com/mainflux/mainflux/internal/clients/grpc/things"
+	influxDBClient "github.com/mainflux/mainflux/internal/clients/influxdb"
+	"github.com/mainflux/mainflux/internal/env"
+	"github.com/mainflux/mainflux/internal/server"
+	httpserver "github.com/mainflux/mainflux/internal/server/http"
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	influxdata "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/mainflux/mainflux"
@@ -25,6 +33,22 @@ import (
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	jconfig "github.com/uber/jaeger-client-go/config"
 	"golang.org/x/sync/errgroup"
+)
+
+const (
+	svcName           = "influxdb-reader"
+	envPrefix         = "MF_INFLUX_READER_"
+	envPrefixHttp     = "MF_INFLUX_READER_HTTP_"
+	envPrefixInfluxdb = "MF_INFLUXDB_"
+	defSvcHttpPort    = "8180"
+)
+
+type config struct {
+	LogLevel  string `env:"MF_INFLUX_READER_LOG_LEVEL"  envDefault:"info"`
+	JaegerURL string `env:"MF_JAEGER_URL"               envDefault:"localhost:6831"`
+}
+
+func main() {
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -109,6 +133,7 @@ func main() {
 	conn := connectToThings(cfg, logger)
 	defer conn.Close()
 
+	tc, tcHandler, err := thingsClient.Setup(envPrefix, cfg.JaegerURL)
 	thingsTracer, thingsCloser := initJaeger("things", cfg.jaegerURL, logger)
 	defer thingsCloser.Close()
 
@@ -124,11 +149,44 @@ func main() {
 
 	client, err := connectToInfluxDB(cfg)
 	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer tcHandler.Close()
+	logger.Info("Successfully connected to things grpc server " + tcHandler.Secure())
+
+	auth, authHandler, err := authClient.Setup(envPrefix, cfg.JaegerURL)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer authHandler.Close()
+	logger.Info("Successfully connected to auth grpc server " + authHandler.Secure())
+
+	influxDBConfig := influxDBClient.Config{}
+	if err := env.Parse(&influxDBConfig, env.Options{Prefix: envPrefixInfluxdb}); err != nil {
+		log.Fatalf("failed to load InfluxDB client configuration from environment variable : %s", err.Error())
+	}
+	influxDBConfig.DBUrl = fmt.Sprintf("%s://%s:%s", influxDBConfig.Protocol, influxDBConfig.Host, influxDBConfig.Port)
+
+	repocfg := influxdb.RepoConfig{
+		Bucket: influxDBConfig.Bucket,
+		Org:    influxDBConfig.Org,
+	}
+
+	client, err := influxDBClient.Connect(influxDBConfig)
+	if err != nil {
+		log.Fatalf("failed to connect to InfluxDB : %s", err.Error())
 		logger.Error(fmt.Sprintf("Failed to create InfluxDB client: %s", err))
 		os.Exit(1)
 	}
 	defer client.Close()
 
+	repo := newService(client, repocfg, logger)
+
+	httpServerConfig := server.Config{Port: defSvcHttpPort}
+	if err := env.Parse(&httpServerConfig, env.Options{Prefix: envPrefixHttp, AltPrefix: envPrefix}); err != nil {
+		log.Fatalf("failed to load %s HTTP server configuration : %s", svcName, err.Error())
+	}
+	hs := httpserver.New(ctx, cancel, svcName, httpServerConfig, api.MakeHandler(repo, tc, auth, svcName, logger), logger)
 	repo := newService(client, repoCfg, logger)
 
 	g.Go(func() error {
@@ -148,6 +206,8 @@ func main() {
 	}
 }
 
+func newService(client influxdb2.Client, repocfg influxdb.RepoConfig, logger logger.Logger) readers.MessageRepository {
+	repo := influxdb.New(client, repocfg)
 func connectToAuth(cfg config, logger logger.Logger) *grpc.ClientConn {
 	var opts []grpc.DialOption
 	logger.Info("Connecting to auth via gRPC")

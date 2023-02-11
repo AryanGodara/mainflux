@@ -17,18 +17,17 @@ import (
 )
 
 const (
-	subtopic     = "topic"
-	msgsNum      = 100
-	limit        = 10
-	valueFields  = 5
-	mqttProt     = "mqtt"
-	httpProt     = "http"
-	msgName      = "temperature"
-	offset       = 21
-	messageDelay = 10
-	format1      = "format1"
-	format2      = "format2"
-	wrongID      = "wrong_id"
+	subtopic    = "topic"
+	msgsNum     = 100
+	limit       = 10
+	valueFields = 5
+	mqttProt    = "mqtt"
+	httpProt    = "http"
+	msgName     = "temperature"
+	offset      = 21
+	format1     = "format1"
+	format2     = "format2"
+	wrongID     = "wrong_id"
 )
 
 var (
@@ -74,13 +73,12 @@ func TestReadSenml(t *testing.T) {
 	stringMsgs := []senml.Message{}
 	dataMsgs := []senml.Message{}
 	queryMsgs := []senml.Message{}
-	now := time.Now().Unix() * 1e9
+	now := float64(time.Now().Unix())
 
 	for i := 0; i < msgsNum; i++ {
 		// Mix possible values as well as value sum.
 		msg := m
-		// now is unixnano, now/1e9 is seconds
-		msg.Time = float64(now)/float64(1e9) - messageDelay*float64(i)
+		msg.Time = now - float64(i)
 
 		count := i % valueFields
 		switch count {

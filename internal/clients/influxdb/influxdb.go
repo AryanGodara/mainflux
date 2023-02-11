@@ -1,10 +1,10 @@
 package influxdb
 
 import (
-	"fmt"
+	"context"
 	"time"
 
-	"github.com/influxdata/influxdb/client/v2"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/mainflux/mainflux/internal/env"
 	"github.com/mainflux/mainflux/pkg/errors"
 )
@@ -21,13 +21,17 @@ type Config struct {
 	Username           string        `env:"ADMIN_USER"            envDefault:"mainflux"`
 	Password           string        `env:"ADMIN_PASSWORD"        envDefault:"mainflux"`
 	DbName             string        `env:"DB"                    envDefault:"mainflux"`
+	Bucket             string        `env:"BUCKET"                envDefault:"mainflux-bucket"`
+	Org                string        `env:"ORG"                   envDefault:"mainflux"`
+	Token              string        `env:"TOKEN"                 envDefault:"mainflux-token"`
+	DBUrl              string        `env:"DBURL"                   envDefault:""`
 	UserAgent          string        `env:"USER_AGENT"            envDefault:"InfluxDBClient"`
 	Timeout            time.Duration `env:"TIMEOUT"` // Influxdb client configuration by default there is no timeout duration , this field will not have fallback default timeout duration Reference: https://pkg.go.dev/github.com/influxdata/influxdb@v1.10.0/client/v2#HTTPConfig
 	InsecureSkipVerify bool          `env:"INSECURE_SKIP_VERIFY"  envDefault:"false"`
 }
 
 // Setup load configuration from environment variable, create InfluxDB client and connect to InfluxDB server
-func Setup(envPrefix string) (client.HTTPClient, error) {
+func Setup(envPrefix string) (influxdb2.Client, error) {
 	config := Config{}
 	if err := env.Parse(&config, env.Options{Prefix: envPrefix}); err != nil {
 		return nil, errors.Wrap(errConfig, err)
@@ -36,16 +40,9 @@ func Setup(envPrefix string) (client.HTTPClient, error) {
 }
 
 // Connect create InfluxDB client and connect to InfluxDB server
-func Connect(config Config) (client.HTTPClient, error) {
-	address := fmt.Sprintf("%s://%s:%s", config.Protocol, config.Host, config.Port)
-	clientConfig := client.HTTPConfig{
-		Addr:      address,
-		Username:  config.Username,
-		Password:  config.Password,
-		UserAgent: config.UserAgent,
-		Timeout:   config.Timeout,
-	}
-	client, err := client.NewHTTPClient(clientConfig)
+func Connect(config Config) (influxdb2.Client, error) {
+	client := influxdb2.NewClient(config.DBUrl, config.Token)
+	_, err := client.Ready(context.Background())
 	if err != nil {
 		return nil, errors.Wrap(errConnect, err)
 	}
