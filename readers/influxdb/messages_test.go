@@ -358,7 +358,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs + string(rune(1)),
+				StringValue: "alu", // substring of value
 				Comparator:  readers.LowerThanKey,
 			},
 			page: readers.MessagesPage{
@@ -372,7 +372,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs + string(rune(1)),
+				StringValue: vs,
 				Comparator:  readers.LowerThanEqualKey,
 			},
 			page: readers.MessagesPage{
@@ -386,7 +386,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs[:len(vs)-1] + string(rune(1)),
+				StringValue: "strings and values",
 				Comparator:  readers.GreaterThanKey,
 			},
 			page: readers.MessagesPage{
@@ -400,7 +400,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs[:len(vs)-1] + string(rune(1)),
+				StringValue: vs + string(rune(1)),
 				Comparator:  readers.GreaterThanEqualKey,
 			},
 			page: readers.MessagesPage{
@@ -546,6 +546,11 @@ func TestReadSenml(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		fmt.Println()
+		fmt.Println("###")
+		fmt.Println(tc.desc)
+		fmt.Println("###")
+		fmt.Println()
 		result, err := reader.ReadAll(tc.chanID, tc.pageMeta)
 		assert.Nil(t, err, fmt.Sprintf("%s: got unexpected error: %s\n", tc.desc, err))
 		assert.ElementsMatch(t, tc.page.Messages, result.Messages, fmt.Sprintf("%s: expected: %v, got: %v\n", tc.desc, tc.page.Messages, result.Messages))
