@@ -355,7 +355,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs + string(rune(1)),
+				StringValue: "alu",
 				Comparator:  readers.LowerThanKey,
 			},
 			page: readers.MessagesPage{
@@ -369,7 +369,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs + string(rune(1)),
+				StringValue: vs,
 				Comparator:  readers.LowerThanEqualKey,
 			},
 			page: readers.MessagesPage{
@@ -383,7 +383,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs[:len(vs)-1],
+				StringValue: "strings and values",
 				Comparator:  readers.GreaterThanKey,
 			},
 			page: readers.MessagesPage{
@@ -397,7 +397,7 @@ func TestReadSenml(t *testing.T) {
 			pageMeta: readers.PageMetadata{
 				Offset:      0,
 				Limit:       limit,
-				StringValue: vs[:len(vs)-1],
+				StringValue: vs,
 				Comparator:  readers.GreaterThanEqualKey,
 			},
 			page: readers.MessagesPage{
