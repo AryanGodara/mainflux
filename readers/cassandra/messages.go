@@ -48,6 +48,17 @@ func (cr cassandraRepository) ReadAll(chanID string, rpm readers.PageMetadata) (
 		ALLOW FILTERING`, q)
 	countCQL := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE channel = ? %s ALLOW FILTERING`, format, q)
 
+	fmt.Println()
+	fmt.Println("selectCQL :-")
+	fmt.Println(selectCQL)
+	fmt.Println()
+	fmt.Println("countCQL :-")
+	fmt.Println(countCQL)
+	fmt.Println()
+	fmt.Println("vals :-")
+	fmt.Println(vals)
+	fmt.Println()
+
 	if format != defTable {
 		selectCQL = fmt.Sprintf(`SELECT channel, subtopic, publisher, protocol, created, payload FROM %s WHERE channel = ? %s LIMIT ?
 			ALLOW FILTERING`, format, q)
@@ -149,8 +160,17 @@ func buildQuery(chanID string, rpm readers.PageMetadata) (string, []interface{})
 			condCQL = fmt.Sprintf(`%s AND bool_value = ?`, condCQL)
 		case "vs":
 			vals = append(vals, val)
+			fmt.Println()
+			fmt.Println("appending this to vals : ")
+			fmt.Println(val)
+			fmt.Println()
 			comparator := readers.ParseValueComparator(query)
-			condCQL = fmt.Sprintf(`%s AND string_value %s ?`, condCQL, comparator)
+			// condCQL = fmt.Sprintf(`%s AND string_value %s ?`, condCQL, comparator)
+			if comparator == "=" || comparator == "<" || comparator == "<=" {
+				condCQL = fmt.Sprintf(`%s AND string_value CONTAINS '?'`, condCQL)
+			} else {
+				condCQL = fmt.Sprintf(`%s AND ? CONTAINS string_value`, condCQL)
+			}
 		case "vd":
 			vals = append(vals, val)
 			comparator := readers.ParseValueComparator(query)
@@ -165,6 +185,10 @@ func buildQuery(chanID string, rpm readers.PageMetadata) (string, []interface{})
 	}
 	vals = append(vals, rpm.Offset+rpm.Limit)
 
+	fmt.Println()
+	fmt.Println("Query returned from buildQuery()")
+	fmt.Println(condCQL)
+	fmt.Println()
 	return condCQL, vals
 }
 

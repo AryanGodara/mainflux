@@ -136,9 +136,19 @@ func fmtCondition(chanID string, rpm readers.PageMetadata) bson.D {
 			bsonFilter := value
 			if val, ok := query["comparator"].(string); ok {
 				comparator := fmt.Sprintf("$%s", mongoComparators[val])
-				bsonFilter = bson.M{comparator: value}
+				if comparator == "$eq" || comparator == "$lt" || comparator == "$lte" {
+					comparator = "search"
+					bsonFilter = bson.M{comparator: value}
+					filter = append(filter, bson.E{Key: "string_value", Value: bsonFilter})
+				} else {
+					comparator = "search"
+					bsonFilter = bson.M{comparator: "string_value"}
+					val, ok := value.(string)
+					if ok {
+						filter = append(filter, bson.E{Key: val, Value: bsonFilter})
+					}
+				}
 			}
-			filter = append(filter, bson.E{Key: "string_value", Value: bsonFilter})
 		case "vd":
 			bsonFilter := value
 			if val, ok := query["comparator"].(string); ok {
